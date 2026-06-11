@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import logging
 from typing import Any, Awaitable, Callable
 
 from custom_components.eight_sleep.pyEight.user import EightUser
@@ -13,6 +15,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from . import EightSleepBaseEntity, EightSleepConfigEntryData
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -82,7 +86,21 @@ class EightSwitchEntity(EightSleepBaseEntity, SwitchEntity):
 
     def _update_attributes(self) -> None:
         if self._user_obj:
-            self._attr_is_on = self._user_obj.get_alarm_enabled(self._alarm_id)
+            try:
+                self._attr_is_on = self._user_obj.get_alarm_enabled(self._alarm_id)
+            except Exception:
+                # Alarm ids vanish when alarms/routines are edited in the app.
+                # A stale id must not raise here: during platform setup it
+                # aborts entity creation for ALL switches, and on refresh it
+                # would break the update. Show unknown until the next refresh
+                # returns a valid alarm.
+                _LOGGER.warning(
+                    "Alarm %s for %s not found in current routines; "
+                    "showing state as unknown until next data refresh",
+                    self._alarm_id or "(next alarm)",
+                    self.entity_id or self.entity_description.key,
+                )
+                self._attr_is_on = None
 
             alarm_id = self._alarm_id or self._user_obj.next_alarm_id
             if alarm_id:
